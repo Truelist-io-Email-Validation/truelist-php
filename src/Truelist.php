@@ -90,9 +90,11 @@ class Truelist
         while ($attempt <= $this->maxRetries) {
             try {
                 return $this->sendRequest($method, $uri, $token, $body);
-            } catch (AuthenticationException $e) {
-                throw $e;
             } catch (TruelistException $e) {
+                if (!$this->isRetryable($e)) {
+                    throw $e;
+                }
+
                 $lastException = $e;
                 $attempt++;
 
@@ -106,6 +108,22 @@ class Truelist
         }
 
         throw $lastException;
+    }
+
+    private function isRetryable(TruelistException $e): bool
+    {
+        if ($e instanceof AuthenticationException) {
+            return false;
+        }
+
+        if ($e instanceof RateLimitException) {
+            return true;
+        }
+
+        $code = $e->getCode();
+
+        // Connection errors (code 0) and server errors (5xx) are retryable
+        return $code === 0 || $code >= 500;
     }
 
     private function sendRequest(string $method, string $uri, string $token, ?array $body = null): ResponseInterface

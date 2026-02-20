@@ -414,6 +414,105 @@ class TruelistTest extends TestCase
         $client->validate('user@example.com');
     }
 
+    public function test_does_not_retry_on_400(): void
+    {
+        $history = [];
+        $client = $this->createClient(
+            [
+                $this->errorResponse(400, 'Bad request'),
+                $this->validResponse(),
+            ],
+            $history,
+            ['max_retries' => 2, 'raise_on_error' => true]
+        );
+
+        try {
+            $client->validate('user@example.com');
+            $this->fail('Expected ApiException');
+        } catch (ApiException $e) {
+            $this->assertCount(1, $history);
+            $this->assertSame(400, $e->getCode());
+        }
+    }
+
+    public function test_does_not_retry_on_403(): void
+    {
+        $history = [];
+        $client = $this->createClient(
+            [
+                $this->errorResponse(403, 'Forbidden'),
+                $this->validResponse(),
+            ],
+            $history,
+            ['max_retries' => 2, 'raise_on_error' => true]
+        );
+
+        try {
+            $client->validate('user@example.com');
+            $this->fail('Expected ApiException');
+        } catch (ApiException $e) {
+            $this->assertCount(1, $history);
+            $this->assertSame(403, $e->getCode());
+        }
+    }
+
+    public function test_does_not_retry_on_404(): void
+    {
+        $history = [];
+        $client = $this->createClient(
+            [
+                $this->errorResponse(404, 'Not found'),
+                $this->validResponse(),
+            ],
+            $history,
+            ['max_retries' => 2, 'raise_on_error' => true]
+        );
+
+        try {
+            $client->validate('user@example.com');
+            $this->fail('Expected ApiException');
+        } catch (ApiException $e) {
+            $this->assertCount(1, $history);
+            $this->assertSame(404, $e->getCode());
+        }
+    }
+
+    public function test_400_returns_unknown_when_raise_on_error_false(): void
+    {
+        $client = $this->createClient(
+            [$this->errorResponse(400, 'Bad request')],
+            options: ['raise_on_error' => false, 'max_retries' => 2]
+        );
+
+        $result = $client->validate('user@example.com');
+
+        $this->assertTrue($result->isUnknown());
+        $this->assertTrue($result->isError());
+    }
+
+    public function test_retries_connection_errors(): void
+    {
+        $history = [];
+        $connectException = new ConnectException(
+            'Connection refused',
+            new Request('POST', '/api/v1/verify')
+        );
+
+        $client = $this->createClient(
+            [
+                $connectException,
+                $this->validResponse(),
+            ],
+            $history,
+            ['max_retries' => 2]
+        );
+
+        $result = $client->validate('user@example.com');
+
+        $this->assertTrue($result->isValid());
+        $this->assertCount(2, $history);
+    }
+
     // --- Request Format Tests ---
 
     public function test_sends_json_content_type(): void
