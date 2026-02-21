@@ -2,7 +2,7 @@
 
 PHP SDK for the [Truelist](https://truelist.io) email validation API.
 
-[![CI](https://github.com/truelist/truelist-php/actions/workflows/ci.yml/badge.svg)](https://github.com/truelist/truelist-php/actions/workflows/ci.yml)
+[![CI](https://github.com/Truelist-io-Email-Validation/truelist-php/actions/workflows/ci.yml/badge.svg)](https://github.com/Truelist-io-Email-Validation/truelist-php/actions/workflows/ci.yml)
 
 ## Requirements
 
