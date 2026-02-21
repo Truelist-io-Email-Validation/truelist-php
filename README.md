@@ -37,7 +37,6 @@ $client = new Truelist('your-api-key', [
     'timeout'        => 10,                         // Request timeout in seconds
     'max_retries'    => 2,                          // Retries on 429/5xx errors
     'raise_on_error' => false,                      // Throw on transient errors
-    'form_api_key'   => 'your-form-key',            // API key for form validation
 ]);
 ```
 
@@ -47,47 +46,42 @@ $client = new Truelist('your-api-key', [
 | `timeout` | `10` | Request timeout in seconds |
 | `max_retries` | `2` | Number of retries on 429/5xx errors (with exponential backoff) |
 | `raise_on_error` | `false` | When `false`, transient errors return an unknown result. When `true`, they throw. |
-| `form_api_key` | `null` | Separate API key for frontend/form validation |
 
 ## Methods
 
 ### `validate(string $email): ValidationResult`
 
-Validates an email address using the server-side API.
+Validates an email address. Sends a `POST` to `/api/v1/verify_inline` with the email as a query parameter.
 
 ```php
 $result = $client->validate('user@example.com');
 
-$result->state;       // 'valid', 'invalid', 'risky', 'unknown'
-$result->subState;    // 'ok', 'accept_all', 'disposable_address', etc.
+$result->email;       // 'user@example.com'
+$result->state;       // 'ok', 'email_invalid', 'accept_all', 'unknown'
+$result->subState;    // 'email_ok', 'is_disposable', 'is_role', etc.
 $result->suggestion;  // Suggested correction or null
-$result->freeEmail;   // true if free email provider
-$result->role;        // true if role address (e.g. info@)
-$result->disposable;  // true if disposable email
-```
-
-### `formValidate(string $email): ValidationResult`
-
-Validates an email using the form validation endpoint. Requires `form_api_key` to be set.
-
-```php
-$client = new Truelist('server-key', [
-    'form_api_key' => 'your-form-key',
-]);
-
-$result = $client->formValidate('user@example.com');
+$result->domain;      // 'example.com'
+$result->canonical;   // 'user'
+$result->mxRecord;    // MX record or null
+$result->firstName;   // First name or null
+$result->lastName;    // Last name or null
+$result->verifiedAt;  // ISO 8601 timestamp or null
 ```
 
 ### `account(): AccountInfo`
 
-Retrieves account information.
+Retrieves account information from `GET /me`.
 
 ```php
 $account = $client->account();
 
-$account->email;    // 'you@example.com'
-$account->plan;     // 'pro'
-$account->credits;  // 9542
+$account->email;        // 'team@company.com'
+$account->name;         // 'Team Lead'
+$account->uuid;         // 'a3828d19-...'
+$account->timeZone;     // 'America/New_York'
+$account->isAdminRole;  // true
+$account->accountName;  // 'Company Inc'
+$account->paymentPlan;  // 'pro'
 ```
 
 ## Result Predicates
@@ -96,42 +90,35 @@ $account->credits;  // 9542
 $result = $client->validate('user@example.com');
 
 // State checks
-$result->isValid();                   // true if state is 'valid'
-$result->isValid(allowRisky: true);   // true if state is 'valid' or 'risky'
-$result->isInvalid();                 // true if state is 'invalid'
-$result->isRisky();                   // true if state is 'risky'
-$result->isUnknown();                 // true if state is 'unknown'
-$result->isError();                   // true if result came from a transient error
+$result->isValid();       // true if state is 'ok'
+$result->isInvalid();     // true if state is 'email_invalid'
+$result->isAcceptAll();   // true if state is 'accept_all'
+$result->isUnknown();     // true if state is 'unknown'
+$result->isError();       // true if result came from a transient error
 
-// Email attribute checks
-$result->isFreeEmail();               // true if free email provider
-$result->isRole();                    // true if role address
-$result->isDisposable();              // true if disposable email
+// Sub-state checks
+$result->isRole();        // true if sub-state is 'is_role'
+$result->isDisposable();  // true if sub-state is 'is_disposable'
 ```
 
 ## Response States
 
 | State | Description |
 |-------|-------------|
-| `valid` | Email is valid and deliverable |
-| `invalid` | Email is not deliverable |
-| `risky` | Email is deliverable but risky (accept-all, role, etc.) |
+| `ok` | Email is valid and deliverable |
+| `email_invalid` | Email is not deliverable |
+| `accept_all` | Domain accepts all emails (catch-all) |
 | `unknown` | Could not determine validity |
 
 ## Response Sub-States
 
 | Sub-State | Description |
 |-----------|-------------|
-| `ok` | Email is valid |
-| `accept_all` | Domain accepts all emails |
-| `disposable_address` | Disposable/temporary email |
-| `role_address` | Role-based address (info@, admin@) |
-| `failed_mx_check` | No valid MX records |
-| `failed_spam_trap` | Known spam trap |
-| `failed_no_mailbox` | Mailbox does not exist |
-| `failed_greylisted` | Server returned temporary error |
-| `failed_syntax_check` | Invalid email syntax |
-| `unknown` | Could not determine |
+| `email_ok` | Email is valid |
+| `is_disposable` | Disposable/temporary email |
+| `is_role` | Role-based address (info@, admin@) |
+| `failed_smtp_check` | SMTP check failed |
+| `unknown_error` | Could not determine |
 
 ## Error Handling
 

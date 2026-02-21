@@ -21,7 +21,6 @@ class Truelist
     private int $timeout;
     private int $maxRetries;
     private bool $raiseOnError;
-    private ?string $formApiKey;
 
     public function __construct(
         private readonly string $apiKey,
@@ -32,7 +31,6 @@ class Truelist
         $this->timeout = $options['timeout'] ?? 10;
         $this->maxRetries = $options['max_retries'] ?? 2;
         $this->raiseOnError = $options['raise_on_error'] ?? false;
-        $this->formApiKey = $options['form_api_key'] ?? null;
 
         $this->httpClient = $httpClient ?? new Client([
             'base_uri' => $this->baseUrl,
@@ -42,35 +40,15 @@ class Truelist
 
     public function validate(string $email): ValidationResult
     {
-        return $this->performValidation('/api/v1/verify', $email, $this->apiKey);
-    }
-
-    public function formValidate(string $email): ValidationResult
-    {
-        $key = $this->formApiKey ?? throw new TruelistException(
-            'Form API key is required for form validation. Set form_api_key in options.'
-        );
-
-        return $this->performValidation('/api/v1/form_verify', $email, $key);
-    }
-
-    public function account(): AccountInfo
-    {
-        $response = $this->requestWithRetry('GET', '/api/v1/account', $this->apiKey);
-        $data = json_decode($response->getBody()->getContents(), true);
-
-        return AccountInfo::fromArray($data);
-    }
-
-    private function performValidation(string $endpoint, string $email, string $token): ValidationResult
-    {
         try {
-            $response = $this->requestWithRetry('POST', $endpoint, $token, [
-                'email' => $email,
-            ]);
+            $response = $this->requestWithRetry(
+                'POST',
+                '/api/v1/verify_inline?' . http_build_query(['email' => $email]),
+                $this->apiKey
+            );
             $data = json_decode($response->getBody()->getContents(), true);
 
-            return ValidationResult::fromArray($data);
+            return ValidationResult::fromApiResponse($data);
         } catch (AuthenticationException $e) {
             throw $e;
         } catch (TruelistException $e) {
@@ -80,6 +58,14 @@ class Truelist
 
             return ValidationResult::unknownError();
         }
+    }
+
+    public function account(): AccountInfo
+    {
+        $response = $this->requestWithRetry('GET', '/me', $this->apiKey);
+        $data = json_decode($response->getBody()->getContents(), true);
+
+        return AccountInfo::fromArray($data);
     }
 
     private function requestWithRetry(string $method, string $uri, string $token, ?array $body = null): ResponseInterface
@@ -122,7 +108,6 @@ class Truelist
 
         $code = $e->getCode();
 
-        // Connection errors (code 0) and server errors (5xx) are retryable
         return $code === 0 || $code >= 500;
     }
 

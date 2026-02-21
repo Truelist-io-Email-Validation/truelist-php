@@ -8,8 +8,12 @@ class AccountInfo
 {
     public function __construct(
         public readonly string $email,
-        public readonly string $plan,
-        public readonly int $credits,
+        public readonly string $name,
+        public readonly string $uuid,
+        public readonly string $timeZone,
+        public readonly bool $isAdminRole,
+        public readonly string $accountName,
+        public readonly string $paymentPlan,
     ) {
     }
 
@@ -17,8 +21,12 @@ class AccountInfo
     {
         return new self(
             email: $data['email'] ?? '',
-            plan: $data['plan'] ?? '',
-            credits: (int) ($data['credits'] ?? 0),
+            name: $data['name'] ?? '',
+            uuid: $data['uuid'] ?? '',
+            timeZone: $data['time_zone'] ?? '',
+            isAdminRole: (bool) ($data['is_admin_role'] ?? false),
+            accountName: $data['account']['name'] ?? '',
+            paymentPlan: $data['account']['payment_plan'] ?? '',
         );
     }
 }

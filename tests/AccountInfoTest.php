@@ -12,14 +12,24 @@ class AccountInfoTest extends TestCase
     public function test_from_array_creates_account_info(): void
     {
         $account = AccountInfo::fromArray([
-            'email' => 'user@example.com',
-            'plan' => 'pro',
-            'credits' => 9542,
+            'email' => 'team@company.com',
+            'name' => 'Team Lead',
+            'uuid' => 'a3828d19-1234-5678-9abc-def012345678',
+            'time_zone' => 'America/New_York',
+            'is_admin_role' => true,
+            'account' => [
+                'name' => 'Company Inc',
+                'payment_plan' => 'pro',
+            ],
         ]);
 
-        $this->assertSame('user@example.com', $account->email);
-        $this->assertSame('pro', $account->plan);
-        $this->assertSame(9542, $account->credits);
+        $this->assertSame('team@company.com', $account->email);
+        $this->assertSame('Team Lead', $account->name);
+        $this->assertSame('a3828d19-1234-5678-9abc-def012345678', $account->uuid);
+        $this->assertSame('America/New_York', $account->timeZone);
+        $this->assertTrue($account->isAdminRole);
+        $this->assertSame('Company Inc', $account->accountName);
+        $this->assertSame('pro', $account->paymentPlan);
     }
 
     public function test_from_array_defaults_missing_fields(): void
@@ -27,27 +37,26 @@ class AccountInfoTest extends TestCase
         $account = AccountInfo::fromArray([]);
 
         $this->assertSame('', $account->email);
-        $this->assertSame('', $account->plan);
-        $this->assertSame(0, $account->credits);
-    }
-
-    public function test_credits_cast_to_int(): void
-    {
-        $account = AccountInfo::fromArray([
-            'email' => 'user@example.com',
-            'plan' => 'starter',
-            'credits' => '500',
-        ]);
-
-        $this->assertSame(500, $account->credits);
+        $this->assertSame('', $account->name);
+        $this->assertSame('', $account->uuid);
+        $this->assertSame('', $account->timeZone);
+        $this->assertFalse($account->isAdminRole);
+        $this->assertSame('', $account->accountName);
+        $this->assertSame('', $account->paymentPlan);
     }
 
     public function test_properties_are_readonly(): void
     {
         $account = AccountInfo::fromArray([
-            'email' => 'user@example.com',
-            'plan' => 'pro',
-            'credits' => 100,
+            'email' => 'team@company.com',
+            'name' => 'Team Lead',
+            'uuid' => 'a3828d19-1234-5678-9abc-def012345678',
+            'time_zone' => 'America/New_York',
+            'is_admin_role' => true,
+            'account' => [
+                'name' => 'Company Inc',
+                'payment_plan' => 'pro',
+            ],
         ]);
 
         $reflection = new \ReflectionClass($account);
