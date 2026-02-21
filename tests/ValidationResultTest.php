@@ -9,44 +9,62 @@ use Truelist\ValidationResult;
 
 class ValidationResultTest extends TestCase
 {
-    public function test_from_array_creates_result(): void
+    public function test_from_api_response_creates_result(): void
     {
-        $result = ValidationResult::fromArray([
-            'state' => 'valid',
-            'sub_state' => 'ok',
-            'suggestion' => null,
-            'free_email' => true,
-            'role' => false,
-            'disposable' => false,
+        $result = ValidationResult::fromApiResponse([
+            'emails' => [[
+                'address' => 'user@example.com',
+                'domain' => 'example.com',
+                'canonical' => 'user',
+                'mx_record' => null,
+                'first_name' => null,
+                'last_name' => null,
+                'email_state' => 'ok',
+                'email_sub_state' => 'email_ok',
+                'verified_at' => '2026-02-21T10:00:00.000Z',
+                'did_you_mean' => null,
+            ]],
         ]);
 
-        $this->assertSame('valid', $result->state);
-        $this->assertSame('ok', $result->subState);
+        $this->assertSame('user@example.com', $result->email);
+        $this->assertSame('ok', $result->state);
+        $this->assertSame('email_ok', $result->subState);
         $this->assertNull($result->suggestion);
-        $this->assertTrue($result->freeEmail);
-        $this->assertFalse($result->role);
-        $this->assertFalse($result->disposable);
+        $this->assertSame('example.com', $result->domain);
+        $this->assertSame('user', $result->canonical);
+        $this->assertNull($result->mxRecord);
+        $this->assertNull($result->firstName);
+        $this->assertNull($result->lastName);
+        $this->assertSame('2026-02-21T10:00:00.000Z', $result->verifiedAt);
         $this->assertFalse($result->error);
     }
 
-    public function test_from_array_defaults_missing_fields(): void
+    public function test_from_api_response_defaults_missing_fields(): void
     {
-        $result = ValidationResult::fromArray([]);
+        $result = ValidationResult::fromApiResponse(['emails' => [[] ]]);
 
+        $this->assertSame('', $result->email);
         $this->assertSame('unknown', $result->state);
-        $this->assertSame('unknown', $result->subState);
+        $this->assertSame('unknown_error', $result->subState);
         $this->assertNull($result->suggestion);
-        $this->assertFalse($result->freeEmail);
-        $this->assertFalse($result->role);
-        $this->assertFalse($result->disposable);
+    }
+
+    public function test_from_api_response_handles_empty_emails_array(): void
+    {
+        $result = ValidationResult::fromApiResponse(['emails' => []]);
+
+        $this->assertSame('', $result->email);
+        $this->assertSame('unknown', $result->state);
+        $this->assertSame('unknown_error', $result->subState);
     }
 
     public function test_unknown_error_creates_error_result(): void
     {
         $result = ValidationResult::unknownError();
 
+        $this->assertSame('', $result->email);
         $this->assertSame('unknown', $result->state);
-        $this->assertSame('unknown', $result->subState);
+        $this->assertSame('unknown_error', $result->subState);
         $this->assertTrue($result->error);
         $this->assertTrue($result->isError());
         $this->assertTrue($result->isUnknown());
@@ -54,93 +72,90 @@ class ValidationResultTest extends TestCase
 
     public function test_is_valid(): void
     {
-        $valid = ValidationResult::fromArray(['state' => 'valid', 'sub_state' => 'ok']);
-        $this->assertTrue($valid->isValid());
-        $this->assertFalse($valid->isInvalid());
-        $this->assertFalse($valid->isRisky());
-        $this->assertFalse($valid->isUnknown());
+        $result = ValidationResult::fromApiResponse([
+            'emails' => [['email_state' => 'ok', 'email_sub_state' => 'email_ok']],
+        ]);
+
+        $this->assertTrue($result->isValid());
+        $this->assertFalse($result->isInvalid());
+        $this->assertFalse($result->isAcceptAll());
+        $this->assertFalse($result->isUnknown());
     }
 
     public function test_is_invalid(): void
     {
-        $invalid = ValidationResult::fromArray(['state' => 'invalid', 'sub_state' => 'failed_no_mailbox']);
-        $this->assertFalse($invalid->isValid());
-        $this->assertTrue($invalid->isInvalid());
+        $result = ValidationResult::fromApiResponse([
+            'emails' => [['email_state' => 'email_invalid', 'email_sub_state' => 'failed_smtp_check']],
+        ]);
+
+        $this->assertFalse($result->isValid());
+        $this->assertTrue($result->isInvalid());
     }
 
-    public function test_is_risky(): void
+    public function test_is_accept_all(): void
     {
-        $risky = ValidationResult::fromArray(['state' => 'risky', 'sub_state' => 'accept_all']);
-        $this->assertFalse($risky->isValid());
-        $this->assertTrue($risky->isRisky());
+        $result = ValidationResult::fromApiResponse([
+            'emails' => [['email_state' => 'accept_all', 'email_sub_state' => 'email_ok']],
+        ]);
+
+        $this->assertFalse($result->isValid());
+        $this->assertTrue($result->isAcceptAll());
     }
 
     public function test_is_unknown(): void
     {
-        $unknown = ValidationResult::fromArray(['state' => 'unknown', 'sub_state' => 'unknown']);
-        $this->assertFalse($unknown->isValid());
-        $this->assertTrue($unknown->isUnknown());
-    }
+        $result = ValidationResult::fromApiResponse([
+            'emails' => [['email_state' => 'unknown', 'email_sub_state' => 'unknown_error']],
+        ]);
 
-    public function test_is_valid_with_allow_risky(): void
-    {
-        $valid = ValidationResult::fromArray(['state' => 'valid', 'sub_state' => 'ok']);
-        $risky = ValidationResult::fromArray(['state' => 'risky', 'sub_state' => 'accept_all']);
-        $invalid = ValidationResult::fromArray(['state' => 'invalid', 'sub_state' => 'failed_no_mailbox']);
-
-        $this->assertTrue($valid->isValid(allowRisky: true));
-        $this->assertTrue($risky->isValid(allowRisky: true));
-        $this->assertFalse($invalid->isValid(allowRisky: true));
-    }
-
-    public function test_is_valid_without_allow_risky_excludes_risky(): void
-    {
-        $risky = ValidationResult::fromArray(['state' => 'risky', 'sub_state' => 'accept_all']);
-        $this->assertFalse($risky->isValid());
-        $this->assertFalse($risky->isValid(allowRisky: false));
-    }
-
-    public function test_is_free_email(): void
-    {
-        $free = ValidationResult::fromArray(['state' => 'valid', 'sub_state' => 'ok', 'free_email' => true]);
-        $notFree = ValidationResult::fromArray(['state' => 'valid', 'sub_state' => 'ok', 'free_email' => false]);
-
-        $this->assertTrue($free->isFreeEmail());
-        $this->assertFalse($notFree->isFreeEmail());
+        $this->assertFalse($result->isValid());
+        $this->assertTrue($result->isUnknown());
     }
 
     public function test_is_role(): void
     {
-        $role = ValidationResult::fromArray(['state' => 'risky', 'sub_state' => 'role_address', 'role' => true]);
-        $notRole = ValidationResult::fromArray(['state' => 'valid', 'sub_state' => 'ok', 'role' => false]);
+        $result = ValidationResult::fromApiResponse([
+            'emails' => [['email_state' => 'ok', 'email_sub_state' => 'is_role']],
+        ]);
 
-        $this->assertTrue($role->isRole());
-        $this->assertFalse($notRole->isRole());
+        $this->assertTrue($result->isRole());
+    }
+
+    public function test_is_not_role(): void
+    {
+        $result = ValidationResult::fromApiResponse([
+            'emails' => [['email_state' => 'ok', 'email_sub_state' => 'email_ok']],
+        ]);
+
+        $this->assertFalse($result->isRole());
     }
 
     public function test_is_disposable(): void
     {
-        $disposable = ValidationResult::fromArray([
-            'state' => 'invalid',
-            'sub_state' => 'disposable_address',
-            'disposable' => true,
-        ]);
-        $notDisposable = ValidationResult::fromArray([
-            'state' => 'valid',
-            'sub_state' => 'ok',
-            'disposable' => false,
+        $result = ValidationResult::fromApiResponse([
+            'emails' => [['email_state' => 'email_invalid', 'email_sub_state' => 'is_disposable']],
         ]);
 
-        $this->assertTrue($disposable->isDisposable());
-        $this->assertFalse($notDisposable->isDisposable());
+        $this->assertTrue($result->isDisposable());
+    }
+
+    public function test_is_not_disposable(): void
+    {
+        $result = ValidationResult::fromApiResponse([
+            'emails' => [['email_state' => 'ok', 'email_sub_state' => 'email_ok']],
+        ]);
+
+        $this->assertFalse($result->isDisposable());
     }
 
     public function test_suggestion_field(): void
     {
-        $result = ValidationResult::fromArray([
-            'state' => 'invalid',
-            'sub_state' => 'failed_syntax_check',
-            'suggestion' => 'user@gmail.com',
+        $result = ValidationResult::fromApiResponse([
+            'emails' => [[
+                'email_state' => 'email_invalid',
+                'email_sub_state' => 'failed_smtp_check',
+                'did_you_mean' => 'user@gmail.com',
+            ]],
         ]);
 
         $this->assertSame('user@gmail.com', $result->suggestion);
@@ -148,7 +163,10 @@ class ValidationResultTest extends TestCase
 
     public function test_is_error_false_for_normal_result(): void
     {
-        $result = ValidationResult::fromArray(['state' => 'valid', 'sub_state' => 'ok']);
+        $result = ValidationResult::fromApiResponse([
+            'emails' => [['email_state' => 'ok', 'email_sub_state' => 'email_ok']],
+        ]);
+
         $this->assertFalse($result->isError());
     }
 }

@@ -37,57 +37,90 @@ class TruelistTest extends TestCase
     private function validResponse(): Response
     {
         return new Response(200, ['Content-Type' => 'application/json'], json_encode([
-            'state' => 'valid',
-            'sub_state' => 'ok',
-            'suggestion' => null,
-            'free_email' => true,
-            'role' => false,
-            'disposable' => false,
+            'emails' => [[
+                'address' => 'user@example.com',
+                'domain' => 'example.com',
+                'canonical' => 'user',
+                'mx_record' => null,
+                'first_name' => null,
+                'last_name' => null,
+                'email_state' => 'ok',
+                'email_sub_state' => 'email_ok',
+                'verified_at' => '2026-02-21T10:00:00.000Z',
+                'did_you_mean' => null,
+            ]],
         ]));
     }
 
     private function invalidResponse(): Response
     {
         return new Response(200, ['Content-Type' => 'application/json'], json_encode([
-            'state' => 'invalid',
-            'sub_state' => 'failed_no_mailbox',
-            'suggestion' => null,
-            'free_email' => false,
-            'role' => false,
-            'disposable' => false,
+            'emails' => [[
+                'address' => 'bad@example.com',
+                'domain' => 'example.com',
+                'canonical' => 'bad',
+                'mx_record' => null,
+                'first_name' => null,
+                'last_name' => null,
+                'email_state' => 'email_invalid',
+                'email_sub_state' => 'failed_smtp_check',
+                'verified_at' => '2026-02-21T10:00:00.000Z',
+                'did_you_mean' => null,
+            ]],
         ]));
     }
 
-    private function riskyResponse(): Response
+    private function acceptAllResponse(): Response
     {
         return new Response(200, ['Content-Type' => 'application/json'], json_encode([
-            'state' => 'risky',
-            'sub_state' => 'accept_all',
-            'suggestion' => null,
-            'free_email' => false,
-            'role' => false,
-            'disposable' => false,
+            'emails' => [[
+                'address' => 'catchall@example.com',
+                'domain' => 'example.com',
+                'canonical' => 'catchall',
+                'mx_record' => null,
+                'first_name' => null,
+                'last_name' => null,
+                'email_state' => 'accept_all',
+                'email_sub_state' => 'email_ok',
+                'verified_at' => '2026-02-21T10:00:00.000Z',
+                'did_you_mean' => null,
+            ]],
         ]));
     }
 
     private function unknownResponse(): Response
     {
         return new Response(200, ['Content-Type' => 'application/json'], json_encode([
-            'state' => 'unknown',
-            'sub_state' => 'unknown',
-            'suggestion' => null,
-            'free_email' => false,
-            'role' => false,
-            'disposable' => false,
+            'emails' => [[
+                'address' => 'unknown@example.com',
+                'domain' => 'example.com',
+                'canonical' => 'unknown',
+                'mx_record' => null,
+                'first_name' => null,
+                'last_name' => null,
+                'email_state' => 'unknown',
+                'email_sub_state' => 'unknown_error',
+                'verified_at' => null,
+                'did_you_mean' => null,
+            ]],
         ]));
     }
 
     private function accountResponse(): Response
     {
         return new Response(200, ['Content-Type' => 'application/json'], json_encode([
-            'email' => 'user@example.com',
-            'plan' => 'pro',
-            'credits' => 9542,
+            'email' => 'team@company.com',
+            'name' => 'Team Lead',
+            'uuid' => 'a3828d19-1234-5678-9abc-def012345678',
+            'time_zone' => 'America/New_York',
+            'is_admin_role' => true,
+            'token' => 'test_token',
+            'api_keys' => [],
+            'account' => [
+                'name' => 'Company Inc',
+                'payment_plan' => 'pro',
+                'users' => [],
+            ],
         ]));
     }
 
@@ -97,7 +130,7 @@ class TruelistTest extends TestCase
             'message' => $message,
         ]));
 
-        return new RequestException($message, new Request('POST', '/api/v1/verify'), $response);
+        return new RequestException($message, new Request('POST', '/api/v1/verify_inline'), $response);
     }
 
     // --- Validate Tests ---
@@ -111,17 +144,16 @@ class TruelistTest extends TestCase
 
         $this->assertInstanceOf(ValidationResult::class, $result);
         $this->assertTrue($result->isValid());
-        $this->assertSame('valid', $result->state);
-        $this->assertSame('ok', $result->subState);
-        $this->assertTrue($result->isFreeEmail());
+        $this->assertSame('ok', $result->state);
+        $this->assertSame('email_ok', $result->subState);
+        $this->assertSame('user@example.com', $result->email);
+        $this->assertSame('example.com', $result->domain);
 
         $request = $history[0]['request'];
         $this->assertSame('POST', $request->getMethod());
-        $this->assertSame('/api/v1/verify', $request->getUri()->getPath());
+        $this->assertSame('/api/v1/verify_inline', $request->getUri()->getPath());
+        $this->assertSame('email=user%40example.com', $request->getUri()->getQuery());
         $this->assertSame('Bearer test-api-key', $request->getHeaderLine('Authorization'));
-
-        $body = json_decode($request->getBody()->getContents(), true);
-        $this->assertSame('user@example.com', $body['email']);
     }
 
     public function test_validate_invalid_email(): void
@@ -131,19 +163,18 @@ class TruelistTest extends TestCase
         $result = $client->validate('bad@example.com');
 
         $this->assertTrue($result->isInvalid());
-        $this->assertSame('invalid', $result->state);
-        $this->assertSame('failed_no_mailbox', $result->subState);
+        $this->assertSame('email_invalid', $result->state);
+        $this->assertSame('failed_smtp_check', $result->subState);
     }
 
-    public function test_validate_risky_email(): void
+    public function test_validate_accept_all_email(): void
     {
-        $client = $this->createClient([$this->riskyResponse()]);
+        $client = $this->createClient([$this->acceptAllResponse()]);
 
-        $result = $client->validate('risky@example.com');
+        $result = $client->validate('catchall@example.com');
 
-        $this->assertTrue($result->isRisky());
+        $this->assertTrue($result->isAcceptAll());
         $this->assertFalse($result->isValid());
-        $this->assertTrue($result->isValid(allowRisky: true));
     }
 
     public function test_validate_unknown_email(): void
@@ -156,36 +187,6 @@ class TruelistTest extends TestCase
         $this->assertFalse($result->isValid());
     }
 
-    // --- Form Validate Tests ---
-
-    public function test_form_validate_uses_form_api_key(): void
-    {
-        $history = [];
-        $client = $this->createClient(
-            [$this->validResponse()],
-            $history,
-            ['form_api_key' => 'form-key-123']
-        );
-
-        $result = $client->formValidate('user@example.com');
-
-        $this->assertTrue($result->isValid());
-
-        $request = $history[0]['request'];
-        $this->assertSame('/api/v1/form_verify', $request->getUri()->getPath());
-        $this->assertSame('Bearer form-key-123', $request->getHeaderLine('Authorization'));
-    }
-
-    public function test_form_validate_throws_without_form_key(): void
-    {
-        $client = $this->createClient([$this->validResponse()]);
-
-        $this->expectException(TruelistException::class);
-        $this->expectExceptionMessage('Form API key is required');
-
-        $client->formValidate('user@example.com');
-    }
-
     // --- Account Tests ---
 
     public function test_account_returns_account_info(): void
@@ -196,13 +197,17 @@ class TruelistTest extends TestCase
         $account = $client->account();
 
         $this->assertInstanceOf(AccountInfo::class, $account);
-        $this->assertSame('user@example.com', $account->email);
-        $this->assertSame('pro', $account->plan);
-        $this->assertSame(9542, $account->credits);
+        $this->assertSame('team@company.com', $account->email);
+        $this->assertSame('Team Lead', $account->name);
+        $this->assertSame('a3828d19-1234-5678-9abc-def012345678', $account->uuid);
+        $this->assertSame('America/New_York', $account->timeZone);
+        $this->assertTrue($account->isAdminRole);
+        $this->assertSame('Company Inc', $account->accountName);
+        $this->assertSame('pro', $account->paymentPlan);
 
         $request = $history[0]['request'];
         $this->assertSame('GET', $request->getMethod());
-        $this->assertSame('/api/v1/account', $request->getUri()->getPath());
+        $this->assertSame('/me', $request->getUri()->getPath());
         $this->assertSame('Bearer test-api-key', $request->getHeaderLine('Authorization'));
     }
 
@@ -296,7 +301,7 @@ class TruelistTest extends TestCase
     {
         $exception = new ConnectException(
             'Connection refused',
-            new Request('POST', '/api/v1/verify')
+            new Request('POST', '/api/v1/verify_inline')
         );
 
         $client = $this->createClient(
@@ -314,7 +319,7 @@ class TruelistTest extends TestCase
     {
         $exception = new ConnectException(
             'Connection refused',
-            new Request('POST', '/api/v1/verify')
+            new Request('POST', '/api/v1/verify_inline')
         );
 
         $client = $this->createClient(
@@ -495,7 +500,7 @@ class TruelistTest extends TestCase
         $history = [];
         $connectException = new ConnectException(
             'Connection refused',
-            new Request('POST', '/api/v1/verify')
+            new Request('POST', '/api/v1/verify_inline')
         );
 
         $client = $this->createClient(
@@ -523,19 +528,19 @@ class TruelistTest extends TestCase
         $client->validate('user@example.com');
 
         $request = $history[0]['request'];
-        $this->assertSame('application/json', $request->getHeaderLine('Content-Type'));
         $this->assertSame('application/json', $request->getHeaderLine('Accept'));
     }
 
-    public function test_sends_correct_json_body(): void
+    public function test_sends_email_as_query_param(): void
     {
         $history = [];
         $client = $this->createClient([$this->validResponse()], $history);
 
         $client->validate('test@example.com');
 
-        $body = json_decode($history[0]['request']->getBody()->getContents(), true);
-        $this->assertSame(['email' => 'test@example.com'], $body);
+        $request = $history[0]['request'];
+        $this->assertSame('email=test%40example.com', $request->getUri()->getQuery());
+        $this->assertSame('/api/v1/verify_inline', $request->getUri()->getPath());
     }
 
     // --- Account Error Tests ---
