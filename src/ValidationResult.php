@@ -7,58 +7,68 @@ namespace Truelist;
 class ValidationResult
 {
     public function __construct(
+        public readonly string $email,
         public readonly string $state,
         public readonly string $subState,
         public readonly ?string $suggestion,
-        public readonly bool $freeEmail,
-        public readonly bool $role,
-        public readonly bool $disposable,
+        public readonly ?string $domain,
+        public readonly ?string $canonical,
+        public readonly ?string $mxRecord,
+        public readonly ?string $firstName,
+        public readonly ?string $lastName,
+        public readonly ?string $verifiedAt,
         public readonly bool $error = false,
     ) {
     }
 
-    public static function fromArray(array $data): self
+    public static function fromApiResponse(array $data): self
     {
+        $email = $data['emails'][0] ?? [];
+
         return new self(
-            state: $data['state'] ?? 'unknown',
-            subState: $data['sub_state'] ?? 'unknown',
-            suggestion: $data['suggestion'] ?? null,
-            freeEmail: (bool) ($data['free_email'] ?? false),
-            role: (bool) ($data['role'] ?? false),
-            disposable: (bool) ($data['disposable'] ?? false),
+            email: $email['address'] ?? '',
+            state: $email['email_state'] ?? 'unknown',
+            subState: $email['email_sub_state'] ?? 'unknown_error',
+            suggestion: $email['did_you_mean'] ?? null,
+            domain: $email['domain'] ?? null,
+            canonical: $email['canonical'] ?? null,
+            mxRecord: $email['mx_record'] ?? null,
+            firstName: $email['first_name'] ?? null,
+            lastName: $email['last_name'] ?? null,
+            verifiedAt: $email['verified_at'] ?? null,
         );
     }
 
     public static function unknownError(): self
     {
         return new self(
+            email: '',
             state: 'unknown',
-            subState: 'unknown',
+            subState: 'unknown_error',
             suggestion: null,
-            freeEmail: false,
-            role: false,
-            disposable: false,
+            domain: null,
+            canonical: null,
+            mxRecord: null,
+            firstName: null,
+            lastName: null,
+            verifiedAt: null,
             error: true,
         );
     }
 
-    public function isValid(bool $allowRisky = false): bool
+    public function isValid(): bool
     {
-        if ($allowRisky) {
-            return $this->state === 'valid' || $this->state === 'risky';
-        }
-
-        return $this->state === 'valid';
+        return $this->state === 'ok';
     }
 
     public function isInvalid(): bool
     {
-        return $this->state === 'invalid';
+        return $this->state === 'email_invalid';
     }
 
-    public function isRisky(): bool
+    public function isAcceptAll(): bool
     {
-        return $this->state === 'risky';
+        return $this->state === 'accept_all';
     }
 
     public function isUnknown(): bool
@@ -71,18 +81,13 @@ class ValidationResult
         return $this->error;
     }
 
-    public function isFreeEmail(): bool
-    {
-        return $this->freeEmail;
-    }
-
     public function isRole(): bool
     {
-        return $this->role;
+        return $this->subState === 'is_role';
     }
 
     public function isDisposable(): bool
     {
-        return $this->disposable;
+        return $this->subState === 'is_disposable';
     }
 }
